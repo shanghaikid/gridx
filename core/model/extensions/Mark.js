@@ -1,9 +1,11 @@
 define([
 	'dojo/_base/declare',
+	'dojo/_base/lang',
 	'dojo/_base/array',
+	'dojo/aspect',
 	/*====='../Model',=====*/
 	'../_Extension'
-], function(declare, array,
+], function(declare, lang, array, aspect,
 	/*=====Model, =====*/
 	_Extension){
 
@@ -28,7 +30,7 @@ define([
 
 		priority: 5,
 		
-		constructor: function(model){
+		constructor: function(model, args){
 			var t = this;
 			t.mixed = 'mixed';
 			t.states = {
@@ -44,6 +46,34 @@ define([
 			t.aspect(model, 'setStore', 'clear');
 			model.onMarkChange = function(){};
 			model._spTypes = {};
+
+			t.serverMode = args.markServerMode;
+
+			// build selection cache
+			t._buildSelectionCache();
+		},
+
+		_buildSelectionCache: function() {
+			var t = this,
+				s = t.model.store,
+				selectCache = t._byId.select = t._byId.select ? t._byId.select : {};
+
+			// cache full id list 
+			t._ids = [];
+
+			// if we are in server mode, get full id list from server
+			if (t.serverMode) {
+				aspect.around(t.model.store, "_xhrFetchHandler", function(oldFn) {
+					return function(data) {
+						for (var i = 0, len = data.ids.length; i < len; i++) {
+							selectCache[data.ids[i]] = selectCache[data.ids[i]] !== undefined ?  selectCache[data.ids[i]] : 0;
+							t._ids[i] = data.ids[i];
+						}
+
+						oldFn.apply(t.model.store, arguments);
+					};
+				});
+			}
 		},
 
 		//Public------------------------------------------------------------------
@@ -152,26 +182,47 @@ define([
 					});
 				}
 			});
-			return m._call('when', [{
-				id: [],
-				range: ranges
-			}, function(){
-				array.forEach(args, function(arg){
-					var id = arg[3] ? arg[0] : m._call('indexToId', [arg[0], arg[4]]),
-						toMark = arg[1],
-						type = t._initMark(arg[2]);
-					if(toMark === t.mixed){
-						toMark = 1;
-					}else if(toMark){
-						toMark = 2;
-					}else{
-						toMark = 0;
-					}
-					if(t.model.isId(id) && t._isMarkable(type, id)){
-						t._mark(id, toMark, type);
-					}
-				});
-			}]);
+
+			// if we are in server mode
+			// select id from the selection cache
+			// otherwise, use gridx approach
+			if (t.serverMode) {
+				t.__cmdMark(args);
+			} else {
+				return m._call('when', [{
+					id: [],
+					range: ranges
+				}, lang.hitch(t, t.__cmdMark, args)]);
+			}
+		},
+
+		__cmdMark: function(args) {
+			var t = this;
+
+			array.forEach(args, function(arg){
+				var id = arg[3] ? arg[0] : t._indexToId(arg[0], arg[4]),
+					toMark = arg[1],
+					type = t._initMark(arg[2]);
+				if(toMark === t.mixed){
+					toMark = 1;
+				}else if(toMark){
+					toMark = 2;
+				}else{
+					toMark = 0;
+				}
+				if(t.model.isId(id) && t._isMarkable(type, id)){
+					t._mark(id, toMark, type);
+				}
+			});
+		},
+
+		// local indexToId
+		// if we are in server mode, return id from local selection cache
+		// if we are in local mode, use gridx approach
+		_indexToId: function(index, parentId) {
+			if (!this.serverMode) return this.inner._call('indexToId', arguments);
+
+			return this._ids[index];
 		},
 
 		_onDelete: function(id, rowIndex, treePath){
