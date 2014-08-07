@@ -40,7 +40,7 @@ define([
 			};
 			t.clear();
 			t._tree = {};
-			t._mixinAPI('getMark', 'getMarkedIds', 'markById', 'markByIndex', 'clearMark', 'treeMarkMode', 'setMarkable');
+			t._mixinAPI('getMark', 'getMarkedIds', 'markById', 'markByIndex', 'clearMark', 'treeMarkMode', 'setMarkable', 'getIdByVisualId');
 			t.aspect(model, '_msg', '_receiveMsg');
 			t.aspect(model._cache, 'onLoadRow', '_onLoadRow');
 			t.aspect(model, 'setStore', 'clear');
@@ -65,15 +65,21 @@ define([
 			if (t.serverMode) {
 				aspect.around(t.model.store, "_xhrFetchHandler", function(oldFn) {
 					return function(data) {
-						for (var i = 0, len = data.ids.length; i < len; i++) {
-							selectCache[data.ids[i]] = selectCache[data.ids[i]] !== undefined ?  selectCache[data.ids[i]] : 0;
-							t._ids[i] = data.ids[i];
+						if (data.ids) {
+							for (var i = 0, len = data.ids.length; i < len; i++) {
+								selectCache[data.ids[i]] = selectCache[data.ids[i]] !== undefined ?  selectCache[data.ids[i]] : 0;
+								t._ids[i] = data.ids[i];
+							}
 						}
 
 						oldFn.apply(t.model.store, arguments);
 					};
 				});
 			}
+		},
+
+		getIdByVisualId: function(vId) {
+			return this._ids[vId] !== undefined ? this._ids[vId] : -1;
 		},
 
 		//Public------------------------------------------------------------------
